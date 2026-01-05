@@ -1,0 +1,69 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "script-spliter"
+version = "0.1.0"
+description = "Convert large JavaScript files into structured, modular components"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "Script Spliter Team", email = "support@example.com"},
+]
+keywords = ["javascript", "modular", "refactoring", "code-splitting", "dependency-analysis"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Software Development :: Tools",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Environment :: Console",
+]
+
+dependencies = [
+    "regex>=2023.0.0",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0",
+    "black>=21.0",
+    "flake8>=3.9",
+    "mypy>=0.910",
+]
+
+[project.urls]
+Homepage = "https://github.com/jomardyan/ScriptSpliter"
+"Bug Tracker" = "https://github.com/jomardyan/ScriptSpliter/issues"
+Documentation = "https://github.com/jomardyan/ScriptSpliter#readme"
+Source = "https://github.com/jomardyan/ScriptSpliter"
+
+[project.scripts]
+script-spliter = "script_spliter.cli:main"
+
+[tool.setuptools]
+packages = ["script_spliter"]
+
+[tool.black]
+line-length = 100
+target-version = ['py38']
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false

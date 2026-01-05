@@ -131,7 +131,17 @@ dmypy.json
 
 # Project specific
 output/
-examples/output_*/
-examples/sample.js
-examples/custom-grouping.json
+/output/
 .DS_Store
+*.swp
+*.swo
+*~
+
+# Test artifacts
+.pytest_cache/
+htmlcov/
+.hypothesis/
+
+# Development test files (before publication cleanup)
+test_*.py
+*_test.py

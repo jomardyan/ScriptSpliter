@@ -1,0 +1,10 @@
+include README.md
+include LICENSE
+include QUICKSTART.md
+include requirements.txt
+recursive-exclude * __pycache__
+recursive-exclude * *.py[cod]
+recursive-exclude * .DS_Store
+global-exclude .git
+global-exclude .gitignore
+global-exclude .vscode
