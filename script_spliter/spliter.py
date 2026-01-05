@@ -20,9 +20,11 @@ class ScriptSpliter:
         if not self.source_file.exists():
             raise FileNotFoundError(f"Source file not found: {source_file}")
         
-        # Read source
-        with open(self.source_file, 'r') as f:
-            self.source_code = f.read()
+        # Read source (prefer UTF-8, tolerate invalid bytes if needed).
+        try:
+            self.source_code = self.source_file.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            self.source_code = self.source_file.read_text(encoding="utf-8", errors="replace")
         
         # Parse
         self.parser = JavaScriptParser(self.source_code)
@@ -41,7 +43,10 @@ class ScriptSpliter:
         auto_group: bool = True,
         custom_grouping: Optional[Dict[str, list]] = None,
         include_comments: bool = True,
-        include_report: bool = True
+        include_report: bool = True,
+        target_module_lines: int = 2000,
+        max_blocks_per_module: int = 0,
+        dry_run: bool = False
     ) -> Dict[str, str]:
         """
         Split the JavaScript file into modules.
@@ -53,6 +58,9 @@ class ScriptSpliter:
             custom_grouping: Custom grouping of blocks into modules
             include_comments: Include comments in generated files
             include_report: Generate analysis report
+            target_module_lines: Target max lines per module (0 disables packing)
+            max_blocks_per_module: Max blocks per module (0 disables limit)
+            dry_run: Generate output in memory only; do not write files
         
         Returns:
             Dictionary mapping module names to file paths
@@ -61,7 +69,10 @@ class ScriptSpliter:
         if custom_grouping:
             grouping = custom_grouping
         elif auto_group:
-            grouping = self.analyzer.get_module_suggestions()
+            grouping = self.analyzer.get_module_suggestions(
+                target_lines_per_module=target_module_lines,
+                max_blocks_per_module=max_blocks_per_module
+            )
         else:
             # One block per module
             grouping = {block.name: [block.name] for block in self.blocks if block.name}
@@ -79,19 +90,31 @@ class ScriptSpliter:
         
         self.generator = ModuleGenerator(self.blocks, self.analyzer, config)
         self.modules = self.generator.generate_modules(grouping)
-        
+
+        if dry_run:
+            file_paths = {}
+            output_path = Path(output_dir)
+            file_ext = self.generator.get_file_extension()
+            for module_name in self.modules.keys():
+                file_paths[module_name] = str(output_path / f"{module_name}{file_ext}")
+            index_name = "index.js" if format != "scripts" else "index.html"
+            file_paths["index"] = str(output_path / index_name)
+            if include_report:
+                file_paths["report"] = str(output_path / "ANALYSIS_REPORT.txt")
+            return file_paths
+
         # Write files
         file_paths = self.generator.write_files(output_dir)
-        
+
         # Generate report if requested
         if include_report:
             report = CodeAnalysisReport(self.blocks, self.modules, self.analyzer)
             report_content = report.generate_report()
-            
+
             report_path = Path(output_dir) / "ANALYSIS_REPORT.txt"
             with open(report_path, 'w') as f:
                 f.write(report_content)
-            
+
             file_paths["report"] = str(report_path)
         
         return file_paths

@@ -27,10 +27,16 @@ class ModuleGenerator:
         self.config = config
         self.modules: Dict[str, str] = {}
         self.index_content = ""
+        self.block_to_module: Dict[str, str] = {}
     
     def generate_modules(self, grouping: Dict[str, List[str]]) -> Dict[str, str]:
         """Generate module files based on grouping."""
         self.modules = {}
+        self.block_to_module = {
+            block_name: module_name
+            for module_name, block_names in grouping.items()
+            for block_name in block_names
+        }
         
         for module_name, block_names in grouping.items():
             module_content = self._generate_module(module_name, block_names)
@@ -125,15 +131,11 @@ class ModuleGenerator:
                 exports.append(f"export {{ {', '.join(export_items)} }};")
         
         elif self.config.format == "commonjs":
-            for block_name in block_names:
-                if block_name:
-                    exports.append(f"module.exports.{block_name} = {block_name};")
-            if block_names:
-                # Also export as an object
-                exports.insert(0, "module.exports = {")
-                for name in block_names:
-                    if name:
-                        exports.append(f"  {name},")
+            export_items = [name for name in block_names if name]
+            if export_items:
+                exports.append("module.exports = {")
+                for name in export_items:
+                    exports.append(f"  {name},")
                 exports.append("};")
         
         elif self.config.format == "scripts":
@@ -144,9 +146,7 @@ class ModuleGenerator:
     
     def _find_module_for_block(self, block_name: str) -> Optional[str]:
         """Find which module a block belongs to."""
-        # This is a simplified implementation
-        # In a real scenario, we'd search through the grouping
-        return block_name  # Default: use block name as module
+        return self.block_to_module.get(block_name)
     
     def _generate_index(self, grouping: Dict[str, List[str]]) -> str:
         """Generate an index/entry file."""

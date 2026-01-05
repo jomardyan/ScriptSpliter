@@ -38,7 +38,7 @@ class JavaScriptParser:
     CONST_PATTERN = r'(?:^|\s)(?:const|let|var)\s+(\w+)\s*=\s*(?!(?:async\s*)?\()'
     EXPORT_PATTERN = r'export\s+(?:default\s+)?(?:(?:async\s+)?function|class)\s+(\w+)|export\s*\{\s*([^}]+)\s*\}'
     IMPORT_PATTERN = r'import\s+(?:(?:\{[^}]+\})|(?:\*\s+as\s+\w+)|(?:\w+))\s+from\s+[\'"]([^\'"]+)[\'"]'
-    REQUIRE_PATTERN = r'require\s*\(\s*[\'"]([^\'"]+)['\']\s*\)'
+    REQUIRE_PATTERN = r'require\s*\(\s*[\'"]([^\'"]+)[\'"]\s*\)'
     
     def __init__(self, source: str):
         """Initialize parser with JavaScript source code."""
@@ -47,6 +47,9 @@ class JavaScriptParser:
         self.blocks: List[CodeBlock] = []
         self.imports: Set[str] = set()
         self.exports: Dict[str, str] = {}
+        self._depth_at: List[int] = []
+        self._code_at: List[bool] = []
+        self._build_position_maps()
         
     def parse(self) -> List[CodeBlock]:
         """Parse the JavaScript source and extract all code blocks."""
@@ -65,12 +68,15 @@ class JavaScriptParser:
         """Extract function declarations."""
         # Standard function declarations
         for match in re.finditer(self.FUNCTION_PATTERN, self.source, re.MULTILINE):
+            if not self._is_top_level(match.start()):
+                continue
             func_name = match.group(1)
             start_pos = match.start()
             start_line = self.source[:start_pos].count('\n')
             
             # Find matching closing brace
-            end_line = self._find_closing_brace(start_pos)
+            brace_pos = self.source.find('{', match.end())
+            end_line = self._find_closing_brace(brace_pos) if brace_pos != -1 else None
             if end_line is not None:
                 content = '\n'.join(self.lines[start_line:end_line + 1])
                 block = CodeBlock(
@@ -84,6 +90,8 @@ class JavaScriptParser:
         
         # Arrow function assignments
         for match in re.finditer(self.ARROW_FUNCTION_PATTERN, self.source, re.MULTILINE):
+            if not self._is_top_level(match.start()):
+                continue
             func_name = match.group(1)
             start_pos = match.start()
             start_line = self.source[:start_pos].count('\n')
@@ -108,6 +116,8 @@ class JavaScriptParser:
     def _extract_classes(self):
         """Extract class declarations."""
         for match in re.finditer(self.CLASS_PATTERN, self.source, re.MULTILINE):
+            if not self._is_top_level(match.start()):
+                continue
             class_name = match.group(1)
             parent_class = match.group(2)
             start_pos = match.start()
@@ -132,7 +142,11 @@ class JavaScriptParser:
     def _extract_assignments(self):
         """Extract variable assignments (const, let, var)."""
         for match in re.finditer(self.CONST_PATTERN, self.source, re.MULTILINE):
+            if not self._is_top_level(match.start()):
+                continue
             var_name = match.group(1)
+            if self._has_block_named(var_name):
+                continue
             start_pos = match.start()
             start_line = self.source[:start_pos].count('\n')
             
@@ -256,6 +270,95 @@ class JavaScriptParser:
             if existing.name == block.name and existing.type == block.type:
                 return
         self.blocks.append(block)
+
+    def _has_block_named(self, name: Optional[str]) -> bool:
+        """Check if any block already uses the given name."""
+        if not name:
+            return False
+        return any(block.name == name for block in self.blocks)
+
+    def _build_position_maps(self):
+        """Track brace depth and code positions to identify top-level matches."""
+        length = len(self.source)
+        self._depth_at = [0] * length
+        self._code_at = [True] * length
+
+        depth = 0
+        in_string = False
+        string_char = None
+        escape_next = False
+        in_single_comment = False
+        in_multi_comment = False
+
+        i = 0
+        while i < length:
+            self._depth_at[i] = depth
+            char = self.source[i]
+
+            if in_single_comment:
+                self._code_at[i] = False
+                if char == '\n':
+                    in_single_comment = False
+                i += 1
+                continue
+
+            if in_multi_comment:
+                self._code_at[i] = False
+                if char == '*' and i + 1 < length and self.source[i + 1] == '/':
+                    self._code_at[i + 1] = False
+                    in_multi_comment = False
+                    i += 2
+                    continue
+                i += 1
+                continue
+
+            if in_string:
+                self._code_at[i] = False
+                if escape_next:
+                    escape_next = False
+                elif char == '\\':
+                    escape_next = True
+                elif char == string_char:
+                    in_string = False
+                    string_char = None
+                i += 1
+                continue
+
+            if char == '/' and i + 1 < length:
+                next_char = self.source[i + 1]
+                if next_char == '/':
+                    self._code_at[i] = False
+                    self._code_at[i + 1] = False
+                    in_single_comment = True
+                    i += 2
+                    continue
+                if next_char == '*':
+                    self._code_at[i] = False
+                    self._code_at[i + 1] = False
+                    in_multi_comment = True
+                    i += 2
+                    continue
+
+            if char in ('"', "'", '`'):
+                self._code_at[i] = False
+                in_string = True
+                string_char = char
+                i += 1
+                continue
+
+            if char == '{':
+                depth += 1
+            elif char == '}':
+                if depth > 0:
+                    depth -= 1
+
+            i += 1
+
+    def _is_top_level(self, pos: int) -> bool:
+        """Return True if the position is at top-level code (depth 0)."""
+        if pos < 0 or pos >= len(self._depth_at):
+            return False
+        return self._code_at[pos] and self._depth_at[pos] == 0
     
     def get_dependencies_for(self, block_name: str) -> Set[str]:
         """Get all dependencies for a specific block."""

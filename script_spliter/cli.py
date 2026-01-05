@@ -6,7 +6,11 @@ import sys
 import argparse
 import json
 from pathlib import Path
-from .spliter import ScriptSpliter
+
+try:
+    from .spliter import ScriptSpliter
+except ImportError:  # Allow running as a script without package context.
+    from script_spliter.spliter import ScriptSpliter
 
 
 def main():
@@ -70,6 +74,20 @@ Examples:
         action="store_true",
         help="Don't generate analysis report"
     )
+
+    parser.add_argument(
+        "--max-lines",
+        type=int,
+        default=2000,
+        help="Target max lines per module when auto-grouping (0 disables packing)"
+    )
+
+    parser.add_argument(
+        "--max-blocks",
+        type=int,
+        default=0,
+        help="Max blocks per module when auto-grouping (0 disables limit)"
+    )
     
     parser.add_argument(
         "--analyze",
@@ -88,7 +106,13 @@ Examples:
         metavar="BLOCK_NAME",
         help="Show dependency tree for a specific block"
     )
-    
+
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be generated without writing files"
+    )
+
     parser.add_argument(
         "-v", "--verbose",
         action="store_true",
@@ -147,11 +171,17 @@ Examples:
             auto_group=not args.no_auto_group,
             custom_grouping=custom_grouping,
             include_comments=not args.no_comments,
-            include_report=not args.no_report
+            include_report=not args.no_report,
+            target_module_lines=args.max_lines,
+            max_blocks_per_module=args.max_blocks,
+            dry_run=args.dry_run
         )
         
         # Display results
-        print("\n✓ Successfully split JavaScript file!")
+        if args.dry_run:
+            print("\nDry run - no files written.")
+        else:
+            print("\nSuccessfully split JavaScript file.")
         print("\nGenerated files:")
         print("-" * 70)
         for name, path in file_paths.items():
@@ -165,32 +195,32 @@ Examples:
         return 0
         
     except FileNotFoundError as e:
-        print(f"✗ Error: {e}", file=sys.stderr)
+        print(f"Error: {e}", file=sys.stderr)
         return 1
     except ValueError as e:
-        print(f"✗ Error: {e}", file=sys.stderr)
+        print(f"Error: {e}", file=sys.stderr)
         return 1
     except Exception as e:
-        print(f"✗ Unexpected error: {e}", file=sys.stderr)
+        print(f"Unexpected error: {e}", file=sys.stderr)
         if args.verbose:
             import traceback
             traceback.print_exc()
         return 1
 
 
-def _print_tree(node, indent=0):
+def _print_tree(node, prefix="", is_last=True):
     """Pretty-print a dependency tree."""
     if isinstance(node, dict):
+        connector = "└─ " if is_last else "├─ "
         if "circular" in node and node["circular"]:
-            print(" " * indent + f"├─ {node['name']} (circular dependency)")
+            print(prefix + connector + f"{node['name']} (circular dependency)")
         else:
-            print(" " * indent + f"├─ {node['name']}")
+            print(prefix + connector + f"{node['name']}")
             deps = node.get("dependencies", [])
             for i, dep in enumerate(deps):
                 is_last = i == len(deps) - 1
-                prefix = "    " if is_last else "│   "
-                child_indent = indent + 4
-                _print_tree(dep, child_indent)
+                child_prefix = prefix + ("    " if is_last else "│   ")
+                _print_tree(dep, child_prefix, is_last)
 
 
 if __name__ == "__main__":

@@ -89,6 +89,9 @@ script-spliter <input_file> [options]
 | `--analyze` | | Analyze code without generating files |
 | `--blocks-info` | | Display detected code blocks |
 | `--deps BLOCK_NAME` | | Show dependency tree for a block |
+| `--dry-run` | | Show what would be generated without writing files |
+| `--max-lines` | | Target max lines per module when auto-grouping (0 disables packing) |
+| `--max-blocks` | | Max blocks per module when auto-grouping (0 disables limit) |
 | `--verbose` | `-v` | Verbose output |
 
 ### Examples

@@ -81,16 +81,18 @@ class DependencyAnalyzer:
         for block in self.blocks:
             if not block.dependencies:
                 if block.name and block.name not in visited:
-                    group = self._build_group(block.name)
-                    groups.append(group)
-                    visited.update(group)
+                    group = self._build_group(block.name) - visited
+                    if group:
+                        groups.append(group)
+                        visited.update(group)
         
         # Then process remaining blocks
         for block in self.blocks:
             if block.name and block.name not in visited:
-                group = self._build_group(block.name)
-                groups.append(group)
-                visited.update(group)
+                group = self._build_group(block.name) - visited
+                if group:
+                    groups.append(group)
+                    visited.update(group)
         
         return groups
     
@@ -132,24 +134,25 @@ class DependencyAnalyzer:
         visited = set()
         rec_stack = set()
         
-        def dfs(node: str, path: List[str]) -> bool:
+        def dfs(node: str, path: List[str]) -> None:
             visited.add(node)
             rec_stack.add(node)
             path.append(node)
             
             for neighbor in self.graph.dependencies.get(node, set()):
                 if neighbor not in visited:
-                    if dfs(neighbor, path.copy()):
-                        return True
+                    dfs(neighbor, path)
                 elif neighbor in rec_stack:
-                    # Found a cycle
-                    cycle_start = path.index(neighbor)
-                    cycle = path[cycle_start:] + [neighbor]
+                    # Found a cycle; guard against missing neighbor in path.
+                    if neighbor in path:
+                        cycle_start = path.index(neighbor)
+                        cycle = path[cycle_start:] + [neighbor]
+                    else:
+                        cycle = [node, neighbor, node]
                     cycles.append(cycle)
-                    return True
             
+            path.pop()
             rec_stack.discard(node)
-            return False
         
         for block in self.blocks:
             if block.name and block.name not in visited:
@@ -157,14 +160,19 @@ class DependencyAnalyzer:
         
         return cycles
     
-    def get_module_suggestions(self) -> Dict[str, List[str]]:
+    def get_module_suggestions(
+        self,
+        target_lines_per_module: int = 2000,
+        max_blocks_per_module: int = 0
+    ) -> Dict[str, List[str]]:
         """Suggest how to group blocks into modules."""
         suggestions = {}
         groups = self.get_logical_groups()
+        packed_groups = self._pack_groups(groups, target_lines_per_module, max_blocks_per_module)
         
-        for i, group in enumerate(groups):
+        for i, group in enumerate(packed_groups):
             # Generate a module name based on the blocks in the group
-            names = sorted(group)
+            names = self._order_blocks(group)
             if len(names) == 1:
                 module_name = names[0]
             else:
@@ -174,3 +182,56 @@ class DependencyAnalyzer:
             suggestions[module_name] = names
         
         return suggestions
+
+    def _pack_groups(
+        self,
+        groups: List[Set[str]],
+        target_lines_per_module: int,
+        max_blocks_per_module: int
+    ) -> List[List[str]]:
+        """Combine small groups into larger modules based on size thresholds."""
+        if target_lines_per_module <= 0 and max_blocks_per_module <= 0:
+            return [self._order_blocks(group) for group in groups]
+
+        block_sizes = {
+            block.name: (block.end_line - block.start_line + 1)
+            for block in self.blocks
+            if block.name
+        }
+
+        packed: List[List[str]] = []
+        current: List[str] = []
+        current_lines = 0
+        current_blocks = 0
+
+        for group in groups:
+            ordered = self._order_blocks(group)
+            group_lines = sum(block_sizes.get(name, 0) for name in ordered)
+            group_blocks = len(ordered)
+
+            needs_new = False
+            if current:
+                if target_lines_per_module > 0 and current_lines + group_lines > target_lines_per_module:
+                    needs_new = True
+                if max_blocks_per_module > 0 and current_blocks + group_blocks > max_blocks_per_module:
+                    needs_new = True
+
+            if needs_new:
+                packed.append(current)
+                current = []
+                current_lines = 0
+                current_blocks = 0
+
+            current.extend(ordered)
+            current_lines += group_lines
+            current_blocks += group_blocks
+
+        if current:
+            packed.append(current)
+
+        return packed
+
+    def _order_blocks(self, block_names: Set[str]) -> List[str]:
+        """Order block names by their appearance in the source."""
+        order_map = {block.name: i for i, block in enumerate(self.blocks) if block.name}
+        return sorted(block_names, key=lambda name: order_map.get(name, 0))
